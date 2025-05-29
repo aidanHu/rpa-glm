@@ -1,0 +1,57 @@
+# 网页元素配置文件
+# 如果网页元素更新，只需要在这里修改对应的XPath
+
+# 网站URL
+target_url: "https://chatglm.cn/video?lang=zh"
+
+# 页面元素XPath配置
+elements:
+  # 创作历史按钮
+  creation_history_btn: "//div[contains(@class, 'creation-btn') and contains(., '创作历史')]"
+  
+  # 基础参数相关
+  basic_params_button: "//div[@data-v-00be36d4 and contains(@class, 'prompt-item') and contains(text(), '基础参数')]"
+  basic_params_popup: "//div[contains(@class, 'style-wrap') and .//div[@class='title' and text()='基础参数']]"
+  quality_options:
+    better: "//div[@class='option-item' or @class='option-item selected'][contains(.//div[@class='desc'], '质量更佳')]"
+    faster: "//div[@class='option-item' or @class='option-item selected'][contains(.//div[@class='desc'], '速度更快')]"
+  fps_options:
+    fps_60: "//div[@class='option-item' or @class='option-item selected'][contains(.//div[@class='desc'], '帧率60')]"
+    fps_30: "//div[@class='option-item' or @class='option-item selected'][contains(.//div[@class='desc'], '帧率30')]"
+  resolution_options:
+    resolution_4k: "//div[@class='option-item' or @class='option-item selected'][contains(.//div[@class='desc'], '4k')]"
+    resolution_1080p: "//div[@class='option-item' or @class='option-item selected'][contains(.//div[@class='desc'], '1080P')]"
+  
+  # 上传和生成相关
+  image_uploader: "//div[contains(@class, 'uploader')]"
+  prompt_textarea: "//textarea[contains(@class, 'prompt') and contains(@placeholder, '通过上传图片或输入描述')]"
+  generate_btn: "//div[contains(@class, 'btn-group')]//*[name()='svg']"
+  
+  # 生成状态监控
+  generation_card: "//div[@data-index='0' and contains(@style, 'position: absolute')]"
+  
+  # 生成中状态检测
+  generating_status:
+    container: ".loadding .queue"
+    status_text: ".desc"
+    progress: ".status"
+  
+  # 完成状态检测
+  completed_status:
+    video_element: "video.video-container"
+    video_source: "source[type='video/mp4']"
+    download_btn: "img[src*='toolbar_download_ic']"
+
+# 状态文本配置
+status_texts:
+  generating: "视频生成中"
+  completed_indicators:
+    - "finished"
+    - "loaded"
+  
+# 等待时间配置（毫秒）
+wait_times:
+  page_load: 3000
+  element_appear: 2000
+  upload_complete: 1000
+  generation_check: 5000 
