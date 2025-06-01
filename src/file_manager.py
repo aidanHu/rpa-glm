@@ -176,9 +176,9 @@ class FileManager:
             import re
             
             # 清理提示词，移除不适合文件名的字符
-            clean_prompt = re.sub(r'[<>:"/\\|?*\[\]]', '', prompt)  # 移除不支持的字符
+            clean_prompt = re.sub(r'[<>:"/\\|?*\[\].,!?;:，。！？；：]', '', prompt)  # 移除不支持的字符和标点符号
             clean_prompt = re.sub(r'\s+', '_', clean_prompt)  # 将空格替换为下划线
-            clean_prompt = clean_prompt.strip('_')[:50]  # 移除首尾下划线，限制长度
+            clean_prompt = clean_prompt.strip('_')[:10]  # 移除首尾下划线，限制长度为10个字符
             
             # 生成视频文件名：序号_提示词.mp4
             video_filename = f"{image_index}_{clean_prompt}.mp4"
