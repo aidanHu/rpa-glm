@@ -122,7 +122,8 @@ class FileManager:
                 if pd.isna(status) or status != self.completed_status:
                     prompt = row.iloc[self.prompt_column - 1] if len(row) >= self.prompt_column else None
                     if pd.notna(prompt):
-                        image_index = idx + 1  # 图片序号从1开始，对应Excel第2行
+                        # 修改：使用 Excel 行号作为图片序号
+                        image_index = idx + 1  # Excel 行号从 2 开始（第1行是标题），对应 idx + 1
                         image_path = image_dict.get(image_index)
                         if image_path:
                             pending_tasks.append({
@@ -184,22 +185,96 @@ class FileManager:
             video_filename = f"{image_index}_{clean_prompt}.mp4"
             video_path = os.path.join(folder_path, video_filename)
             
-            # 下载视频
-            timeout = config_manager.get_user_config('download_timeout')
-            response = requests.get(video_url, timeout=timeout, stream=True)
-            response.raise_for_status()
+            # 最大重试次数
+            max_retries = 3
+            retry_count = 0
             
-            # 保存文件
-            with open(video_path, 'wb') as f:
-                for chunk in response.iter_content(chunk_size=8192):
-                    f.write(chunk)
+            while retry_count < max_retries:
+                try:
+                    # 下载视频
+                    timeout = config_manager.get_user_config('download_timeout')
+                    response = requests.get(video_url, timeout=timeout, stream=True)
+                    response.raise_for_status()
+                    
+                    # 获取文件大小
+                    total_size = int(response.headers.get('content-length', 0))
+                    if total_size == 0:
+                        raise Exception("无法获取文件大小")
+                    
+                    # 下载并保存文件
+                    downloaded_size = 0
+                    with open(video_path, 'wb') as f:
+                        for chunk in response.iter_content(chunk_size=8192):
+                            if chunk:
+                                f.write(chunk)
+                                downloaded_size += len(chunk)
+                    
+                    # 验证文件大小
+                    if downloaded_size != total_size:
+                        os.remove(video_path)  # 删除不完整的文件
+                        raise Exception(f"文件下载不完整: 已下载 {downloaded_size} 字节，预期 {total_size} 字节")
+                    
+                    # 验证文件是否为有效的视频文件
+                    if not self._is_valid_video_file(video_path):
+                        os.remove(video_path)  # 删除无效的视频文件
+                        raise Exception("下载的文件不是有效的视频文件")
+                    
+                    logger.info(f"视频保存成功: {video_path}")
+                    return video_path
+                    
+                except Exception as e:
+                    retry_count += 1
+                    if retry_count < max_retries:
+                        logger.warning(f"第 {retry_count} 次下载失败: {e}，正在重试...")
+                        # 如果文件存在，删除它
+                        if os.path.exists(video_path):
+                            os.remove(video_path)
+                        # 等待一段时间后重试
+                        import time
+                        time.sleep(2)  # 等待2秒后重试
+                    else:
+                        logger.error(f"下载失败，已达到最大重试次数 ({max_retries}): {e}")
+                        raise
             
-            logger.info(f"视频保存成功: {video_path}")
-            return video_path
+            return None
             
         except Exception as e:
             logger.error(f"保存视频文件失败: {e}")
             return None
+    
+    def _is_valid_video_file(self, file_path: str) -> bool:
+        """
+        验证文件是否为有效的视频文件
+        """
+        try:
+            # 检查文件是否存在
+            if not os.path.exists(file_path):
+                return False
+            
+            # 检查文件大小
+            file_size = os.path.getsize(file_path)
+            if file_size < 1024:  # 小于1KB的文件可能不是有效的视频
+                return False
+            
+            # 检查文件头部标识
+            with open(file_path, 'rb') as f:
+                header = f.read(12)  # 读取文件头部
+                # 检查是否为MP4文件（ftyp box）
+                if header[4:8] == b'ftyp':
+                    return True
+                # 检查是否为其他常见视频格式
+                if header.startswith(b'\x00\x00\x00\x18ftypmp42'):  # MP4
+                    return True
+                if header.startswith(b'\x00\x00\x00\x20ftypisom'):  # MP4
+                    return True
+                if header.startswith(b'\x00\x00\x00\x20ftypM4V'):  # M4V
+                    return True
+            
+            return False
+            
+        except Exception as e:
+            logger.error(f"验证视频文件失败: {e}")
+            return False
 
 
 # 全局文件管理器实例

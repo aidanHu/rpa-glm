@@ -188,7 +188,7 @@ class BrowserController:
             else:
                 # 如果没有找到文件输入，尝试点击上传区域
                 await self.page.click(uploader_xpath)
-                await asyncio.sleep(0.5)
+                await asyncio.sleep(5)  # 增加等待时间
                 file_input = await self.page.query_selector('input[type="file"]')
                 if file_input:
                     await file_input.set_input_files(image_path)
@@ -198,16 +198,43 @@ class BrowserController:
             # 新增：点击上传按钮
             upload_btn_xpath = '//button[text()="上传"]'
             await self.page.click(upload_btn_xpath)
+            
+            # 增加上传后的等待时间
+            await asyncio.sleep(2)  # 等待上传按钮点击响应
             await self.smart_delay('click_after')
 
             # 等待上传完成
             await asyncio.sleep(config_manager.get_wait_time('upload_complete') / 1000)
             # 智能延时
             await self.smart_delay('upload_after')
+            
+            # 验证上传是否成功
+            await self.verify_upload(image_path)
+            
             logger.info(f"图片上传成功: {image_path}")
             
         except Exception as e:
             logger.error(f"图片上传失败: {e}")
+            raise
+    
+    async def verify_upload(self, image_path: str) -> bool:
+        """验证图片是否上传成功"""
+        try:
+            # 等待上传完成
+            await asyncio.sleep(2)
+            
+            # 检查上传区域是否显示图片
+            uploader_xpath = config_manager.get_web_element('elements.image_uploader')
+            image_element = await self.page.query_selector(f"{uploader_xpath}//img")
+            
+            if not image_element:
+                raise Exception("上传后未找到图片元素")
+            
+            # 可以添加更多的验证逻辑
+            return True
+            
+        except Exception as e:
+            logger.error(f"验证上传失败: {e}")
             raise
     
     async def input_prompt(self, prompt: str):
@@ -251,6 +278,7 @@ class BrowserController:
             check_interval = config_manager.get_wait_time('generation_check') / 1000
             
             start_time = time.time()
+            last_video_url = None  # 记录上一次获取到的视频URL
             
             while time.time() - start_time < timeout / 1000:
                 try:
@@ -275,25 +303,44 @@ class BrowserController:
                         source_element = await card_element.query_selector('source[type="video/mp4"]')
                         if source_element:
                             video_url = await source_element.get_attribute('src')
-                            if video_url:
-                                logger.info(f"视频生成完成，获取到下载链接: {video_url}")
-                                return video_url
+                            if video_url and video_url != last_video_url:
+                                # 验证视频元素是否是新生成的
+                                video_element = await card_element.query_selector('video')
+                                if video_element:
+                                    # 检查视频元素是否可见
+                                    is_visible = await video_element.is_visible()
+                                    if is_visible:
+                                        # 检查视频元素是否在视图中
+                                        is_in_viewport = await video_element.is_in_viewport()
+                                        if is_in_viewport:
+                                            logger.info(f"视频生成完成，获取到新的下载链接: {video_url}")
+                                            return video_url
                         
                         # 如果没有找到source，尝试从video元素的src属性获取
                         video_element = await card_element.query_selector('video.video-container')
                         if video_element:
                             video_url = await video_element.get_attribute('src')
-                            if video_url:
-                                logger.info(f"视频生成完成，获取到下载链接: {video_url}")
-                                return video_url
+                            if video_url and video_url != last_video_url:
+                                # 验证视频元素是否是新生成的
+                                is_visible = await video_element.is_visible()
+                                if is_visible:
+                                    is_in_viewport = await video_element.is_in_viewport()
+                                    if is_in_viewport:
+                                        logger.info(f"视频生成完成，获取到新的下载链接: {video_url}")
+                                        return video_url
                         
                         # 最后尝试从任何video元素获取
                         video_element = await card_element.query_selector('video')
                         if video_element:
                             video_url = await video_element.get_attribute('src')
-                            if video_url:
-                                logger.info(f"视频生成完成，获取到下载链接: {video_url}")
-                                return video_url
+                            if video_url and video_url != last_video_url:
+                                # 验证视频元素是否是新生成的
+                                is_visible = await video_element.is_visible()
+                                if is_visible:
+                                    is_in_viewport = await video_element.is_in_viewport()
+                                    if is_in_viewport:
+                                        logger.info(f"视频生成完成，获取到新的下载链接: {video_url}")
+                                        return video_url
                     
                     await asyncio.sleep(check_interval)
                     
@@ -317,10 +364,8 @@ class BrowserController:
             logger.info(f"开始处理任务: {image_path} -> {prompt}")
             # 1. 上传图片
             await self.upload_image(image_path)
-            # 2. 仅首次设置基础参数
-            if not self.basic_params_set:
-                await self.setup_basic_params()
-                self.basic_params_set = True
+            # 2. 设置基础参数（每次上传图片后都设置）
+            await self.setup_basic_params()
             # 3. 输入提示词
             await self.input_prompt(prompt)
             # 4. 点击生成
