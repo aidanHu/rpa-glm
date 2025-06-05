@@ -156,6 +156,10 @@ class FileManager:
             while len(df.columns) < self.status_column:
                 df[f'Column_{len(df.columns) + 1}'] = None
             
+            # 获取状态列名，并转换为object类型，避免dtype警告
+            status_col_name = df.columns[self.status_column - 1]
+            df[status_col_name] = df[status_col_name].astype('object')
+            
             # 更新状态
             status = status or self.completed_status
             df.iloc[excel_row, self.status_column - 1] = status

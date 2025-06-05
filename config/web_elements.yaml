@@ -24,6 +24,8 @@ elements:
   
   # 上传和生成相关
   image_uploader: "//div[contains(@class, 'uploader')]"
+  file_input: "input[type=\"file\"]"
+  upload_btn: "//button[text()=\"上传\"]"
   prompt_textarea: "//textarea[contains(@class, 'prompt') and contains(@placeholder, '通过上传图片或输入描述')]"
   generate_btn: "//div[contains(@class, 'btn-group')]//*[name()='svg']"
   
@@ -41,6 +43,9 @@ elements:
     video_element: "video.video-container"
     video_source: "source[type='video/mp4']"
     download_btn: "img[src*='toolbar_download_ic']"
+    any_video: "video"
+    any_source: "source[type='video/mp4']"
+  preview_box: "//div[contains(@class, 'preview-box')]"
 
 # 状态文本配置
 status_texts:

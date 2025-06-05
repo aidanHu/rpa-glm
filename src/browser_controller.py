@@ -180,23 +180,24 @@ class BrowserController:
         """上传图片"""
         try:
             uploader_xpath = config_manager.get_web_element('elements.image_uploader')
+            file_input_selector = config_manager.get_web_element('elements.file_input')
+            upload_btn_xpath = config_manager.get_web_element('elements.upload_btn')
             
             # 查找文件输入元素
-            file_input = await self.page.query_selector('input[type="file"]')
+            file_input = await self.page.query_selector(file_input_selector)
             if file_input:
                 await file_input.set_input_files(image_path)
             else:
                 # 如果没有找到文件输入，尝试点击上传区域
                 await self.page.click(uploader_xpath)
                 await asyncio.sleep(5)  # 增加等待时间
-                file_input = await self.page.query_selector('input[type="file"]')
+                file_input = await self.page.query_selector(file_input_selector)
                 if file_input:
                     await file_input.set_input_files(image_path)
                 else:
                     raise Exception("未找到文件上传输入元素")
             
             # 新增：点击上传按钮
-            upload_btn_xpath = '//button[text()="上传"]'
             await self.page.click(upload_btn_xpath)
             
             # 增加上传后的等待时间
@@ -218,21 +219,19 @@ class BrowserController:
             raise
     
     async def verify_upload(self, image_path: str) -> bool:
-        """验证图片是否上传成功"""
+        """验证图片是否上传成功，只判断preview-box出现，出现即返回"""
         try:
-            # 等待上传完成
-            await asyncio.sleep(2)
-            
-            # 检查上传区域是否显示图片
-            uploader_xpath = config_manager.get_web_element('elements.image_uploader')
-            image_element = await self.page.query_selector(f"{uploader_xpath}//img")
-            
-            if not image_element:
-                raise Exception("上传后未找到图片元素")
-            
-            # 可以添加更多的验证逻辑
-            return True
-            
+            preview_box_xpath = config_manager.get_web_element('elements.preview_box')
+            max_wait = 10  # 最多等10秒
+            interval = 0.2  # 检查间隔0.2秒
+            waited = 0
+            while waited < max_wait:
+                preview_box = await self.page.query_selector(preview_box_xpath)
+                if preview_box:
+                    return True
+                await asyncio.sleep(interval)
+                waited += interval
+            raise Exception("上传后未检测到图片预览框元素（preview-box），图片可能未上传成功")
         except Exception as e:
             logger.error(f"验证上传失败: {e}")
             raise
@@ -259,6 +258,9 @@ class BrowserController:
             generate_btn_xpath = config_manager.get_web_element('elements.generate_btn')
             await self.page.click(generate_btn_xpath)
             
+            # 增加点击后的初始延时
+            await asyncio.sleep(5)  # 等待5秒，确保生成开始
+            
             # 智能延时
             await self.smart_delay('click_after')
             logger.info("点击生成按钮成功")
@@ -279,21 +281,32 @@ class BrowserController:
             
             start_time = time.time()
             last_video_url = None  # 记录上一次获取到的视频URL
+            generation_started = False  # 标记是否已经开始生成
             
             while time.time() - start_time < timeout / 1000:
                 try:
                     # 检查生成卡片是否存在
                     card_element = await self.page.query_selector(generation_card_xpath)
                     if not card_element:
-                        await asyncio.sleep(check_interval)
-                        continue
+                        if not generation_started:
+                            # 如果还没开始生成，继续等待
+                            await asyncio.sleep(check_interval)
+                            continue
+                        else:
+                            # 如果已经开始生成但卡片消失了，说明生成失败
+                            logger.error("生成卡片消失，可能生成失败")
+                            return None
                     
                     # 获取卡片内容
                     card_html = await card_element.inner_html()
                     
                     # 检查是否还在生成中
                     if "视频生成中" in card_html or "processing" in card_html or "loadding" in card_html:
-                        logger.info("视频生成中，继续等待...")
+                        if not generation_started:
+                            generation_started = True
+                            logger.info("视频开始生成...")
+                        else:
+                            logger.info("视频生成中，继续等待...")
                         await asyncio.sleep(check_interval)
                         continue
                     
@@ -310,11 +323,10 @@ class BrowserController:
                                     # 检查视频元素是否可见
                                     is_visible = await video_element.is_visible()
                                     if is_visible:
-                                        # 检查视频元素是否在视图中
-                                        is_in_viewport = await video_element.is_in_viewport()
-                                        if is_in_viewport:
-                                            logger.info(f"视频生成完成，获取到新的下载链接: {video_url}")
-                                            return video_url
+                                        # 额外等待2秒，确保视频完全加载
+                                        await asyncio.sleep(2)
+                                        logger.info(f"视频生成完成，获取到新的下载链接: {video_url}")
+                                        return video_url
                         
                         # 如果没有找到source，尝试从video元素的src属性获取
                         video_element = await card_element.query_selector('video.video-container')
@@ -324,10 +336,10 @@ class BrowserController:
                                 # 验证视频元素是否是新生成的
                                 is_visible = await video_element.is_visible()
                                 if is_visible:
-                                    is_in_viewport = await video_element.is_in_viewport()
-                                    if is_in_viewport:
-                                        logger.info(f"视频生成完成，获取到新的下载链接: {video_url}")
-                                        return video_url
+                                    # 额外等待2秒，确保视频完全加载
+                                    await asyncio.sleep(2)
+                                    logger.info(f"视频生成完成，获取到新的下载链接: {video_url}")
+                                    return video_url
                         
                         # 最后尝试从任何video元素获取
                         video_element = await card_element.query_selector('video')
@@ -337,10 +349,10 @@ class BrowserController:
                                 # 验证视频元素是否是新生成的
                                 is_visible = await video_element.is_visible()
                                 if is_visible:
-                                    is_in_viewport = await video_element.is_in_viewport()
-                                    if is_in_viewport:
-                                        logger.info(f"视频生成完成，获取到新的下载链接: {video_url}")
-                                        return video_url
+                                    # 额外等待2秒，确保视频完全加载
+                                    await asyncio.sleep(2)
+                                    logger.info(f"视频生成完成，获取到新的下载链接: {video_url}")
+                                    return video_url
                     
                     await asyncio.sleep(check_interval)
                     
@@ -383,20 +395,16 @@ class BrowserController:
             return None
     
     async def cleanup(self):
-        """清理资源，先关闭Playwright资源，最后关闭比特浏览器窗口"""
+        """清理资源，只关闭Playwright资源，不关闭浏览器窗口"""
         try:
             if self.page:
                 await self.page.close()
             if self.context:
                 await self.context.close()
-            if self.browser:
-                await self.browser.close()
+            # 不再关闭self.browser和比特浏览器窗口
             if self.playwright:
                 await self.playwright.stop()
-            if hasattr(self, '_bit_browser_id'):
-                closeBrowser(self._bit_browser_id)
-                logger.info(f"已关闭比特浏览器窗口: {self._bit_browser_id}")
-            logger.info("浏览器资源清理完成")
+            logger.info("Playwright资源清理完成（浏览器窗口未关闭）")
         except Exception as e:
             logger.error(f"清理浏览器资源失败: {e}")
 
