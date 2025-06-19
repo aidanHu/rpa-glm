@@ -1,79 +1,60 @@
+#!/usr/bin/env python3
 """
-视频生成自动化主程序
-使用Playwright控制Chrome浏览器自动化生成视频
+ChatGLM视频自动生成工具 - GUI版本
+使用PyQt6图形界面
 """
 
-import asyncio
 import sys
 import os
 from pathlib import Path
-from loguru import logger
-from src.task_processor import task_processor
 
+# 添加项目根目录到Python路径
+project_root = Path(__file__).parent
+sys.path.insert(0, str(project_root))
 
-def setup_logging():
-    """设置日志配置"""
-    # 移除默认的日志处理器
-    logger.remove()
-    
-    # 添加控制台输出
-    logger.add(
-        sys.stdout,
-        format="<green>{time:YYYY-MM-DD HH:mm:ss}</green> | <level>{level: <8}</level> | <cyan>{name}</cyan>:<cyan>{function}</cyan>:<cyan>{line}</cyan> - <level>{message}</level>",
-        level="INFO"
-    )
-    
-    # 添加文件输出
-    log_dir = Path("logs")
-    log_dir.mkdir(exist_ok=True)
-    
-    logger.add(
-        log_dir / "video_generator_{time:YYYY-MM-DD}.log",
-        format="{time:YYYY-MM-DD HH:mm:ss} | {level: <8} | {name}:{function}:{line} - {message}",
-        level="DEBUG",
-        rotation="1 day",
-        retention="7 days",
-        encoding="utf-8"
-    )
-
-
-async def main():
-    """主函数"""
+def check_dependencies():
+    """检查关键依赖"""
     try:
-        logger.info("=" * 60)
-        logger.info("视频生成自动化程序启动")
-        logger.info("=" * 60)
-        # 直接初始化任务处理器
-        await task_processor.initialize()
-        await task_processor.process_all_tasks()
-        logger.info("程序执行完成")
-    except KeyboardInterrupt:
-        logger.warning("用户中断程序执行")
-    except Exception as e:
-        logger.error(f"程序执行失败: {e}")
-        raise
-    finally:
-        await task_processor.cleanup()
-        logger.info("程序退出")
+        from PyQt6.QtWidgets import QApplication
+        import yaml
+        import pandas
+        import requests
+        import loguru
+        return True
+    except ImportError as e:
+        print(f"错误：缺少必要依赖 - {e}")
+        print("\n请运行以下命令安装依赖：")
+        print("pip install -r requirements.txt")
+        print("\n或者运行检测脚本：")
+        print("python test_install.py")
+        return False
 
-
-def run():
-    """运行程序的入口函数"""
-    # 设置日志
-    setup_logging()
+def main():
+    """主函数"""
+    print("ChatGLM视频自动生成工具启动中...")
     
     # 检查Python版本
     if sys.version_info < (3, 8):
-        logger.error("需要Python 3.8或更高版本")
+        print("错误：需要Python 3.8或更高版本")
+        print(f"当前版本：{sys.version_info.major}.{sys.version_info.minor}")
         sys.exit(1)
     
+    # 检查依赖
+    if not check_dependencies():
+        sys.exit(1)
+    
+    # 导入并启动GUI
     try:
-        # 运行异步主函数
-        asyncio.run(main())
+        from gui_main import main as gui_main
+        print("正在启动图形界面...")
+        gui_main()
     except Exception as e:
-        logger.error(f"程序运行失败: {e}")
+        print(f"启动GUI失败: {e}")
+        print("\n请尝试以下解决方案：")
+        print("1. 运行: python test_install.py")
+        print("2. 重新安装依赖: pip install -r requirements.txt")
+        print("3. 检查Python版本是否 >= 3.8")
         sys.exit(1)
 
-
 if __name__ == "__main__":
-    run() 
+    main() 

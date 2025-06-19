@@ -13,10 +13,28 @@ from src.config_manager import config_manager
 
 class FileManager:
     def __init__(self):
-        self.root_directory = config_manager.get_user_config('root_directory')
-        self.prompt_column = config_manager.get_user_config('prompt_column')
-        self.status_column = config_manager.get_user_config('status_column')
-        self.completed_status = config_manager.get_user_config('completed_status')
+        # 不在初始化时获取配置，而是在需要时动态获取
+        pass
+    
+    @property
+    def root_directory(self):
+        """动态获取根目录"""
+        return config_manager.get_user_config('root_directory')
+    
+    @property
+    def prompt_column(self):
+        """动态获取提示词列"""
+        return config_manager.get_user_config('prompt_column')
+    
+    @property
+    def status_column(self):
+        """动态获取状态列"""
+        return config_manager.get_user_config('status_column')
+    
+    @property
+    def completed_status(self):
+        """动态获取完成状态"""
+        return config_manager.get_user_config('completed_status')
     
     def find_excel_file(self, folder_path: str) -> Optional[str]:
         """
@@ -41,9 +59,18 @@ class FileManager:
     def get_all_task_folders(self) -> List[str]:
         """获取所有任务文件夹"""
         try:
+            root_dir = self.root_directory
+            if not root_dir:
+                logger.error("根目录未设置")
+                return []
+            
+            if not os.path.exists(root_dir):
+                logger.error(f"根目录不存在: {root_dir}")
+                return []
+            
             folders = []
-            for item in os.listdir(self.root_directory):
-                folder_path = os.path.join(self.root_directory, item)
+            for item in os.listdir(root_dir):
+                folder_path = os.path.join(root_dir, item)
                 if os.path.isdir(folder_path):
                     # 检查文件夹中是否有Excel文件
                     excel_file = self.find_excel_file(folder_path)
@@ -198,48 +225,30 @@ class FileManager:
                     # 下载视频
                     timeout = config_manager.get_user_config('download_timeout')
                     response = requests.get(video_url, timeout=timeout, stream=True)
-                    response.raise_for_status()
                     
-                    # 获取文件大小
-                    total_size = int(response.headers.get('content-length', 0))
-                    if total_size == 0:
-                        raise Exception("无法获取文件大小")
-                    
-                    # 下载并保存文件
-                    downloaded_size = 0
-                    with open(video_path, 'wb') as f:
-                        for chunk in response.iter_content(chunk_size=8192):
-                            if chunk:
+                    if response.status_code == 200:
+                        with open(video_path, 'wb') as f:
+                            for chunk in response.iter_content(chunk_size=8192):
                                 f.write(chunk)
-                                downloaded_size += len(chunk)
-                    
-                    # 验证文件大小
-                    if downloaded_size != total_size:
-                        os.remove(video_path)  # 删除不完整的文件
-                        raise Exception(f"文件下载不完整: 已下载 {downloaded_size} 字节，预期 {total_size} 字节")
-                    
-                    # 验证文件是否为有效的视频文件
-                    if not self._is_valid_video_file(video_path):
-                        os.remove(video_path)  # 删除无效的视频文件
-                        raise Exception("下载的文件不是有效的视频文件")
-                    
-                    logger.info(f"视频保存成功: {video_path}")
-                    return video_path
-                    
-                except Exception as e:
-                    retry_count += 1
-                    if retry_count < max_retries:
-                        logger.warning(f"第 {retry_count} 次下载失败: {e}，正在重试...")
-                        # 如果文件存在，删除它
-                        if os.path.exists(video_path):
-                            os.remove(video_path)
-                        # 等待一段时间后重试
-                        import time
-                        time.sleep(2)  # 等待2秒后重试
+                        
+                        # 验证视频文件
+                        if self._is_valid_video_file(video_path):
+                            logger.info(f"视频下载成功: {video_path}")
+                            return video_path
+                        else:
+                            logger.warning(f"下载的视频文件无效，重试中... ({retry_count + 1}/{max_retries})")
+                            os.remove(video_path)  # 删除无效文件
                     else:
-                        logger.error(f"下载失败，已达到最大重试次数 ({max_retries}): {e}")
-                        raise
+                        logger.warning(f"下载失败，状态码: {response.status_code}")
+                
+                except requests.exceptions.Timeout:
+                    logger.warning(f"下载超时，重试中... ({retry_count + 1}/{max_retries})")
+                except Exception as e:
+                    logger.warning(f"下载失败: {e}，重试中... ({retry_count + 1}/{max_retries})")
+                
+                retry_count += 1
             
+            logger.error(f"视频下载失败，已重试 {max_retries} 次")
             return None
             
         except Exception as e:
@@ -247,38 +256,29 @@ class FileManager:
             return None
     
     def _is_valid_video_file(self, file_path: str) -> bool:
-        """
-        验证文件是否为有效的视频文件
-        """
+        """检查视频文件是否有效"""
         try:
-            # 检查文件是否存在
-            if not os.path.exists(file_path):
-                return False
-            
             # 检查文件大小
             file_size = os.path.getsize(file_path)
-            if file_size < 1024:  # 小于1KB的文件可能不是有效的视频
+            if file_size < 1024:  # 小于1KB认为无效
                 return False
             
-            # 检查文件头部标识
+            # 简单检查文件头（MP4文件通常以特定字节开头）
             with open(file_path, 'rb') as f:
-                header = f.read(12)  # 读取文件头部
-                # 检查是否为MP4文件（ftyp box）
-                if header[4:8] == b'ftyp':
-                    return True
-                # 检查是否为其他常见视频格式
-                if header.startswith(b'\x00\x00\x00\x18ftypmp42'):  # MP4
-                    return True
-                if header.startswith(b'\x00\x00\x00\x20ftypisom'):  # MP4
-                    return True
-                if header.startswith(b'\x00\x00\x00\x20ftypM4V'):  # M4V
+                header = f.read(12)
+                # MP4文件的常见文件头模式
+                if b'ftyp' in header:
                     return True
             
             return False
             
         except Exception as e:
-            logger.error(f"验证视频文件失败: {e}")
+            logger.error(f"检查视频文件有效性失败: {e}")
             return False
+    
+    def get_download_folder(self, folder_path: str) -> str:
+        """获取下载文件夹路径"""
+        return folder_path
 
 
 # 全局文件管理器实例

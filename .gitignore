@@ -1,3 +1,8 @@
 .DS_Store
 /__pycache__
 /logs
+build_exe.py
+config_preset.yaml
+打包说明.md
+快速开始.md
+test_install.py

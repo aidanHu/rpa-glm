@@ -14,29 +14,78 @@ class ConfigManager:
         self.project_root = Path(__file__).parent.parent
         self.user_config = None
         self.web_elements_config = None
-        self.load_configs()
+        self.load_web_elements_config()
     
-    def load_configs(self):
-        """加载所有配置文件"""
+    def load_web_elements_config(self):
+        """加载网页元素配置"""
         try:
-            # 加载用户配置
-            user_config_path = self.project_root / "config" / "user_config.yaml"
-            with open(user_config_path, 'r', encoding='utf-8') as f:
-                self.user_config = yaml.safe_load(f)
-            
-            # 加载网页元素配置
             web_elements_path = self.project_root / "config" / "web_elements.yaml"
             with open(web_elements_path, 'r', encoding='utf-8') as f:
                 self.web_elements_config = yaml.safe_load(f)
+            logger.info("网页元素配置加载成功")
+        except Exception as e:
+            logger.error(f"网页元素配置加载失败: {e}")
+            raise
+    
+    def set_user_config(self, config_data):
+        """直接设置用户配置数据（从GUI传入）"""
+        self.user_config = config_data
+        logger.info("用户配置已从GUI更新")
+    
+    def load_configs(self):
+        """为了兼容性保留，但现在主要通过set_user_config设置"""
+        try:
+            # 只加载网页元素配置，用户配置由GUI提供
+            self.load_web_elements_config()
             
-            logger.info("配置文件加载成功")
+            # 如果没有用户配置，尝试从文件加载作为默认值
+            if self.user_config is None:
+                user_config_path = self.project_root / "config" / "user_config.yaml"
+                if user_config_path.exists():
+                    with open(user_config_path, 'r', encoding='utf-8') as f:
+                        self.user_config = yaml.safe_load(f)
+                    logger.info("从文件加载了默认用户配置")
+                else:
+                    # 提供默认配置
+                    self.user_config = self.get_default_config()
+                    logger.info("使用默认用户配置")
             
         except Exception as e:
-            logger.error(f"配置文件加载失败: {e}")
-            raise
+            logger.error(f"配置加载失败: {e}")
+            # 使用默认配置
+            self.user_config = self.get_default_config()
+    
+    def get_default_config(self):
+        """获取默认配置"""
+        return {
+            'root_directory': '',
+            'prompt_column': 3,
+            'status_column': 5,
+            'completed_status': '已生成视频',
+            'bit_browser_id': '',
+            'headless': False,
+            'timeout': 30000,
+            'video_generation_timeout': 300000,
+            'video_options': {
+                'quality': '速度更快',
+                'framerate': '帧率60',
+                'resolution': '4k'
+            },
+            'smart_delay': {
+                'min': 1.0,
+                'max': 2.0,
+                'upload_after': 2.0,
+                'input_after': 1.0,
+                'click_after': 1.5
+            },
+            'download_timeout': 60
+        }
     
     def get_user_config(self, key=None):
         """获取用户配置"""
+        if self.user_config is None:
+            self.user_config = self.get_default_config()
+        
         if key:
             return self.user_config.get(key)
         return self.user_config
@@ -98,8 +147,8 @@ class ConfigManager:
     def validate_root_directory(self):
         """验证根目录是否存在"""
         root_dir = self.get_user_config('root_directory')
-        if not os.path.exists(root_dir):
-            logger.error(f"根目录不存在: {root_dir}")
+        if not root_dir or not os.path.exists(root_dir):
+            logger.error(f"根目录不存在或未设置: {root_dir}")
             return False
         return True
 
