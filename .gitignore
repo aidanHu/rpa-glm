@@ -3,6 +3,7 @@
 /logs
 build_exe.py
 config_preset.yaml
+/src/__pycache__
 打包说明.md
 快速开始.md
 test_install.py
