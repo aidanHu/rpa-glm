@@ -32,29 +32,6 @@ class ConfigManager:
         self.user_config = config_data
         logger.info("用户配置已从GUI更新")
     
-    def load_configs(self):
-        """为了兼容性保留，但现在主要通过set_user_config设置"""
-        try:
-            # 只加载网页元素配置，用户配置由GUI提供
-            self.load_web_elements_config()
-            
-            # 如果没有用户配置，尝试从文件加载作为默认值
-            if self.user_config is None:
-                user_config_path = self.project_root / "config" / "user_config.yaml"
-                if user_config_path.exists():
-                    with open(user_config_path, 'r', encoding='utf-8') as f:
-                        self.user_config = yaml.safe_load(f)
-                    logger.info("从文件加载了默认用户配置")
-                else:
-                    # 提供默认配置
-                    self.user_config = self.get_default_config()
-                    logger.info("使用默认用户配置")
-            
-        except Exception as e:
-            logger.error(f"配置加载失败: {e}")
-            # 使用默认配置
-            self.user_config = self.get_default_config()
-    
     def get_default_config(self):
         """获取默认配置"""
         return {

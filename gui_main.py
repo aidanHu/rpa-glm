@@ -7,6 +7,7 @@ import sys
 import os
 import asyncio
 import yaml
+import json
 from pathlib import Path
 from PyQt6.QtWidgets import (
     QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, 
@@ -70,9 +71,11 @@ class VideoGeneratorGUI(QMainWindow):
     def __init__(self):
         super().__init__()
         self.worker = None
+        self.auto_save_timer = QTimer()
         self.init_ui()
-        self.setup_logging()
-        self.load_default_config()
+        self.setup_auto_save()  # 先设置自动保存（包含日志连接）
+        self.setup_logging()    # 再设置日志系统
+        self.load_saved_config()
         
     def init_ui(self):
         """初始化用户界面"""
@@ -198,7 +201,20 @@ class VideoGeneratorGUI(QMainWindow):
     def setup_logging(self):
         """设置日志系统"""
         setup_gui_logging()
-        gui_log_handler.log_signal.connect(self.append_log)
+    
+    def setup_auto_save(self):
+        """设置自动保存"""
+        self.auto_save_timer.timeout.connect(self.auto_save_config)
+        self.auto_save_timer.start(5000)  # 每5秒自动保存一次
+        
+        # 连接日志信号
+        try:
+            gui_log_handler.log_signal.connect(self.append_log)
+            # 先添加欢迎信息
+            self.append_log("=== ChatGLM视频生成工具日志 ===")
+            self.append_log("日志系统已初始化，所有操作记录将在此显示")
+        except Exception as e:
+            print(f"日志系统连接失败: {e}")
     
     def create_basic_config_tab(self):
         """创建基本配置选项卡"""
@@ -357,13 +373,19 @@ class VideoGeneratorGUI(QMainWindow):
         # 日志显示区域
         self.log_text_edit = QTextEdit()
         self.log_text_edit.setReadOnly(True)
-        self.log_text_edit.setFont(QFont("Consolas", 9))
+        
+        # 使用系统默认字体
+        font = QFont()
+        font.setPointSize(10)
+        self.log_text_edit.setFont(font)
+        
         self.log_text_edit.setStyleSheet("""
             QTextEdit {
                 background-color: #1e1e1e;
                 color: #ffffff;
                 border: 1px solid #cccccc;
                 border-radius: 4px;
+                padding: 5px;
             }
         """)
         
@@ -438,6 +460,80 @@ class VideoGeneratorGUI(QMainWindow):
         if directory:
             self.root_dir_edit.setText(directory)
     
+    def get_config_file_path(self):
+        """获取配置文件路径"""
+        # 保存在用户主目录的隐藏文件
+        home_dir = Path.home()
+        return home_dir / ".chatglm_video_config.json"
+    
+    def auto_save_config(self):
+        """自动保存配置"""
+        try:
+            config = self.get_config_data()
+            config_file = self.get_config_file_path()
+            
+            with open(config_file, 'w', encoding='utf-8') as f:
+                json.dump(config, f, ensure_ascii=False, indent=2)
+                
+        except Exception as e:
+            # 静默失败，避免干扰用户
+            pass
+    
+    def load_saved_config(self):
+        """加载保存的配置"""
+        try:
+            config_file = self.get_config_file_path()
+            
+            if config_file.exists():
+                with open(config_file, 'r', encoding='utf-8') as f:
+                    config = json.load(f)
+                    
+                self.set_config_to_ui(config)
+                logger.info("已自动加载上次保存的配置")
+                self.status_label.setText("已自动加载上次保存的配置")
+            else:
+                # 如果没有保存的配置，使用默认配置
+                self.load_default_config()
+                
+        except Exception as e:
+            logger.error(f"加载保存的配置失败，使用默认配置: {e}")
+            self.load_default_config()
+    
+    def set_config_to_ui(self, config):
+        """将配置数据设置到UI"""
+        try:
+            # 基本配置
+            self.root_dir_edit.setText(config.get('root_directory', ''))
+            self.browser_id_edit.setText(config.get('bit_browser_id', ''))
+            self.headless_checkbox.setChecked(config.get('headless', False))
+            self.timeout_spinbox.setValue(config.get('timeout', 30000))
+            self.video_timeout_spinbox.setValue(config.get('video_generation_timeout', 300000))
+            
+            # Excel配置
+            self.prompt_column_spinbox.setValue(config.get('prompt_column', 3))
+            self.status_column_spinbox.setValue(config.get('status_column', 5))
+            self.completed_status_edit.setText(config.get('completed_status', '已生成视频'))
+            
+            # 视频选项
+            video_options = config.get('video_options', {})
+            self.quality_combo.setCurrentText(video_options.get('quality', '速度更快'))
+            self.framerate_combo.setCurrentText(video_options.get('framerate', '帧率60'))
+            self.resolution_combo.setCurrentText(video_options.get('resolution', '4k'))
+            
+            # 智能延时
+            smart_delay = config.get('smart_delay', {})
+            self.min_delay_spinbox.setValue(smart_delay.get('min', 1.0))
+            self.max_delay_spinbox.setValue(smart_delay.get('max', 2.0))
+            self.upload_delay_spinbox.setValue(smart_delay.get('upload_after', 2.0))
+            self.input_delay_spinbox.setValue(smart_delay.get('input_after', 1.0))
+            self.click_delay_spinbox.setValue(smart_delay.get('click_after', 1.5))
+            
+            # 下载配置
+            self.download_timeout_spinbox.setValue(config.get('download_timeout', 60))
+            
+        except Exception as e:
+            logger.error(f"设置配置到UI失败: {e}")
+    
     def load_default_config(self):
         """加载默认配置"""
         try:
@@ -493,14 +589,23 @@ class VideoGeneratorGUI(QMainWindow):
     
     def save_preset(self):
         """保存配置预设"""
-        file_path, _ = QFileDialog.getSaveFileName(
-            self, "保存配置预设", "config_preset.yaml", "YAML文件 (*.yaml);;所有文件 (*)"
+        file_path, selected_filter = QFileDialog.getSaveFileName(
+            self, "保存配置预设", "config_preset.json", 
+            "JSON文件 (*.json);;YAML文件 (*.yaml);;所有文件 (*)"
         )
         if file_path:
             try:
                 config_data = self.get_config_data()
-                with open(file_path, 'w', encoding='utf-8') as f:
-                    yaml.dump(config_data, f, default_flow_style=False, allow_unicode=True)
+                
+                if file_path.endswith('.json') or "JSON文件" in selected_filter:
+                    # 保存为JSON格式
+                    with open(file_path, 'w', encoding='utf-8') as f:
+                        json.dump(config_data, f, ensure_ascii=False, indent=2)
+                else:
+                    # 保存为YAML格式
+                    with open(file_path, 'w', encoding='utf-8') as f:
+                        yaml.dump(config_data, f, default_flow_style=False, allow_unicode=True)
+                
                 QMessageBox.information(self, "成功", "配置预设已保存！")
             except Exception as e:
                 QMessageBox.critical(self, "错误", f"保存预设失败: {str(e)}")
@@ -508,37 +613,19 @@ class VideoGeneratorGUI(QMainWindow):
     def load_preset(self):
         """加载配置预设"""
         file_path, _ = QFileDialog.getOpenFileName(
-            self, "加载配置预设", "", "YAML文件 (*.yaml);;所有文件 (*)"
+            self, "加载配置预设", "", "YAML文件 (*.yaml);;JSON文件 (*.json);;所有文件 (*)"
         )
         if file_path:
             try:
-                with open(file_path, 'r', encoding='utf-8') as f:
-                    config = yaml.safe_load(f)
+                if file_path.endswith('.json'):
+                    with open(file_path, 'r', encoding='utf-8') as f:
+                        config = json.load(f)
+                else:
+                    with open(file_path, 'r', encoding='utf-8') as f:
+                        config = yaml.safe_load(f)
                 
-                # 更新界面
-                self.root_dir_edit.setText(config.get('root_directory', ''))
-                self.browser_id_edit.setText(config.get('bit_browser_id', ''))
-                self.headless_checkbox.setChecked(config.get('headless', False))
-                self.timeout_spinbox.setValue(config.get('timeout', 30000))
-                self.video_timeout_spinbox.setValue(config.get('video_generation_timeout', 300000))
-                
-                self.prompt_column_spinbox.setValue(config.get('prompt_column', 3))
-                self.status_column_spinbox.setValue(config.get('status_column', 5))
-                self.completed_status_edit.setText(config.get('completed_status', '已生成视频'))
-                
-                video_options = config.get('video_options', {})
-                self.quality_combo.setCurrentText(video_options.get('quality', '速度更快'))
-                self.framerate_combo.setCurrentText(video_options.get('framerate', '帧率60'))
-                self.resolution_combo.setCurrentText(video_options.get('resolution', '4k'))
-                
-                smart_delay = config.get('smart_delay', {})
-                self.min_delay_spinbox.setValue(smart_delay.get('min', 1.0))
-                self.max_delay_spinbox.setValue(smart_delay.get('max', 2.0))
-                self.upload_delay_spinbox.setValue(smart_delay.get('upload_after', 2.0))
-                self.input_delay_spinbox.setValue(smart_delay.get('input_after', 1.0))
-                self.click_delay_spinbox.setValue(smart_delay.get('click_after', 1.5))
-                
-                self.download_timeout_spinbox.setValue(config.get('download_timeout', 60))
+                # 使用统一的配置设置方法
+                self.set_config_to_ui(config)
                 
                 QMessageBox.information(self, "成功", "配置预设已加载！")
                 
@@ -586,6 +673,9 @@ class VideoGeneratorGUI(QMainWindow):
             if not os.path.exists(self.root_dir_edit.text()):
                 QMessageBox.warning(self, "警告", "任务根目录不存在！")
                 return
+            
+            # 强制保存当前配置
+            self.auto_save_config()
             
             # 获取配置数据
             config_data = self.get_config_data()
@@ -641,11 +731,52 @@ class VideoGeneratorGUI(QMainWindow):
     
     def append_log(self, message):
         """添加日志消息"""
-        self.log_text_edit.append(message)
+        try:
+            # 移动光标到文档末尾
+            cursor = self.log_text_edit.textCursor()
+            cursor.movePosition(cursor.MoveOperation.End)
+            self.log_text_edit.setTextCursor(cursor)
+            
+            # 添加消息
+            self.log_text_edit.insertPlainText(message + '\n')
+            
+            # 确保滚动到底部
+            self.log_text_edit.ensureCursorVisible()
+        except Exception as e:
+            # 如果出错，使用简单的append方法
+            self.log_text_edit.append(message)
+    
+    def closeEvent(self, event):
+        """程序关闭事件"""
+        # 最后一次保存配置
+        self.auto_save_config()
+        
+        # 停止自动保存定时器
+        self.auto_save_timer.stop()
+        
+        # 如果有运行中的任务，询问是否强制关闭
+        if self.worker and self.worker.isRunning():
+            reply = QMessageBox.question(
+                self, "确认关闭", 
+                "任务正在运行中，确定要退出吗？",
+                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+                QMessageBox.StandardButton.No
+            )
+            
+            if reply == QMessageBox.StandardButton.Yes:
+                self.worker.terminate()
+                self.worker.wait()
+                event.accept()
+            else:
+                event.ignore()
+        else:
+            event.accept()
 
 
 def main():
     """主函数"""
+    print("正在启动图形界面...")
+    
     app = QApplication(sys.argv)
     
     # 设置应用信息
@@ -655,6 +786,12 @@ def main():
     # 创建主窗口
     window = VideoGeneratorGUI()
     window.show()
+    
+    # 测试日志输出
+    from loguru import logger
+    logger.info("程序启动成功，欢迎使用ChatGLM视频生成工具！")
+    logger.info("请在'基本配置'选项卡中设置任务根目录和比特浏览器ID")
+    logger.warning("使用前请确保比特浏览器已正确安装并获取窗口ID")
     
     sys.exit(app.exec())
 

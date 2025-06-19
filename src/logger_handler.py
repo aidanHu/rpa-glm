@@ -15,16 +15,13 @@ class GuiLogHandler(QObject):
     def __init__(self):
         super().__init__()
         
-    def emit(self, record):
+    def emit(self, message):
         """发射日志信号"""
         try:
-            message = record.get('message', '')
-            level = record.get('level', {}).get('name', 'INFO')
-            time_str = record.get('time', '').strftime('%H:%M:%S') if record.get('time') else ''
-            
-            formatted_message = f"[{time_str}] {level}: {message}"
-            self.log_signal.emit(formatted_message)
-        except Exception:
+            # loguru会传递已格式化的字符串消息
+            self.log_signal.emit(str(message).strip())
+        except Exception as e:
+            # 静默忽略错误，避免递归日志
             pass
 
 
@@ -34,6 +31,9 @@ gui_log_handler = GuiLogHandler()
 
 def setup_gui_logging():
     """设置GUI日志"""
+    # 移除默认的控制台输出
+    logger.remove()
+    
     # 添加GUI处理器到loguru
     logger.add(
         gui_log_handler.emit,

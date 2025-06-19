@@ -34,7 +34,7 @@ class BrowserController:
             # 从配置读取窗口ID
             bit_browser_id = config_manager.get_user_config('bit_browser_id')
             if not bit_browser_id or bit_browser_id == "请填写比特浏览器窗口ID":
-                raise Exception("请在user_config.yaml中配置bit_browser_id为比特浏览器窗口ID")
+                raise Exception("请在GUI界面中配置比特浏览器窗口ID")
             # 打开指定窗口，获取ws地址
             open_res = openBrowser(bit_browser_id)
             logger.info(f"open_res: {open_res}")
@@ -198,24 +198,23 @@ class BrowserController:
                     raise Exception("未找到文件上传输入元素")
             
             # 新增：点击上传按钮
-            await self.page.click(upload_btn_xpath)
+            try:
+                await self.page.click(upload_btn_xpath)
+                logger.info("点击上传按钮成功")
+            except Exception as e:
+                logger.warning(f"点击上传按钮失败（可能已自动上传）: {e}")
             
-            # 增加上传后的等待时间
-            await asyncio.sleep(2)  # 等待上传按钮点击响应
-            await self.smart_delay('click_after')
-
-            # 等待上传完成
-            await asyncio.sleep(config_manager.get_wait_time('upload_complete') / 1000)
-            # 智能延时
+            # 上传后延时
             await self.smart_delay('upload_after')
             
             # 验证上传是否成功
-            await self.verify_upload(image_path)
-            
-            logger.info(f"图片上传成功: {image_path}")
-            
+            if await self.verify_upload(image_path):
+                logger.info(f"图片上传成功: {image_path}")
+            else:
+                raise Exception("图片上传验证失败")
+                
         except Exception as e:
-            logger.error(f"图片上传失败: {e}")
+            logger.error(f"上传图片失败: {e}")
             raise
     
     async def verify_upload(self, image_path: str) -> bool:
@@ -242,14 +241,16 @@ class BrowserController:
             textarea_xpath = config_manager.get_web_element('elements.prompt_textarea')
             
             # 清空并输入提示词
+            await self.page.fill(textarea_xpath, "")
             await self.page.fill(textarea_xpath, prompt)
             
-            # 智能延时
+            # 输入后延时
             await self.smart_delay('input_after')
+            
             logger.info(f"提示词输入成功: {prompt}")
             
         except Exception as e:
-            logger.error(f"提示词输入失败: {e}")
+            logger.error(f"输入提示词失败: {e}")
             raise
     
     async def click_generate(self):
@@ -258,11 +259,9 @@ class BrowserController:
             generate_btn_xpath = config_manager.get_web_element('elements.generate_btn')
             await self.page.click(generate_btn_xpath)
             
-            # 增加点击后的初始延时
-            await asyncio.sleep(5)  # 等待5秒，确保生成开始
-            
-            # 智能延时
+            # 点击后延时
             await self.smart_delay('click_after')
+            
             logger.info("点击生成按钮成功")
             
         except Exception as e:
@@ -366,7 +365,9 @@ class BrowserController:
         except Exception as e:
             logger.error(f"等待视频生成完成失败: {e}")
             return None
-    
+
+
+
     async def process_single_task(self, image_path: str, prompt: str) -> Optional[str]:
         """
         处理单个任务：上传图片、输入提示词、生成视频
@@ -393,7 +394,7 @@ class BrowserController:
         except Exception as e:
             logger.error(f"处理任务失败: {e}")
             return None
-    
+
     async def cleanup(self):
         """清理资源，只关闭Playwright资源，不关闭浏览器窗口"""
         try:
