@@ -34,11 +34,12 @@ where python
 
 ### 1.3 安装依赖
 ```powershell
-# 安装项目依赖
-pip install -r requirements.txt
+# 升级pip
+python -m pip install --upgrade pip
 
-# 安装PyInstaller
-pip install PyInstaller==6.3.0
+# 安装项目依赖（使用预编译包避免编译问题）
+pip install --only-binary=all pandas openpyxl
+pip install -r requirements.txt
 ```
 
 ### 1.4 检查环境
@@ -65,7 +66,17 @@ python main.py
 ### 3.1 使用spec文件打包（推荐）
 ```powershell
 # 使用预配置的spec文件
-pyinstaller chatglm_video_tool.spec
+python -m PyInstaller chatglm_video_tool.spec
+```
+
+**如果出现"pyinstaller不是内部或外部命令"错误：**
+```powershell
+# 检查PyInstaller是否安装
+python -c "import PyInstaller; print('PyInstaller已安装:', PyInstaller.__version__)"
+
+# 使用python模块方式运行（100%有效）
+python -m PyInstaller --version
+python -m PyInstaller chatglm_video_tool.spec
 ```
 
 ### 3.2 或使用命令行打包（单文件）
@@ -132,7 +143,19 @@ copy ..\README.md .
 
 ## 故障排除
 
-### 常见问题1: 打包失败
+### 常见问题1: 依赖安装失败（编译错误）
+```
+错误信息: Microsoft Visual C++ 14.0 or greater is required
+错误信息: Unknown compiler(s): [['cl'], ['gcc'], ...]
+
+解决方案:
+1. 强制使用预编译包: pip install --only-binary=all pandas openpyxl
+2. 清理冲突依赖: pip uninstall pandas numpy greenlet -y
+3. 使用python模块方式: python -m pip install --upgrade pip
+4. 分步安装: pip install PyQt6 playwright requests loguru PyYAML PyInstaller
+```
+
+### 常见问题2: 打包失败
 ```
 解决方案:
 1. 确保虚拟环境已激活
@@ -140,21 +163,21 @@ copy ..\README.md .
 3. 更新PyInstaller: pip install --upgrade PyInstaller
 ```
 
-### 常见问题2: EXE文件太大
+### 常见问题3: EXE文件太大
 ```
 解决方案:
 1. 在spec文件中排除不需要的模块
 2. 使用 --exclude-module 参数排除大型库
 ```
 
-### 常见问题3: EXE运行时缺少模块
+### 常见问题4: EXE运行时缺少模块
 ```
 解决方案:
 1. 在spec文件的hiddenimports中添加缺失的模块
 2. 使用 --hidden-import 参数添加隐藏导入
 ```
 
-### 常见问题4: 中文路径问题
+### 常见问题5: 中文路径问题
 ```
 解决方案:
 1. 确保项目路径不包含中文字符
