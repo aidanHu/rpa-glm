@@ -148,3 +148,5 @@ config/user_config.yaml
 *.tmp
 *.temp
 /src/__pycache__
+build_exe_fixed.py
+debug_exe.py
